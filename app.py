@@ -1,14 +1,11 @@
-from flask import Flask, render_template, redirect, url_for, request, session
+from flask import Flask, render_template, redirect, url_for, request, session, send_from_directory
 import sqlite3
 
 app = Flask(__name__)
-
 app.secret_key = "campusflow_secret_key"
 
 
-# =========================================================
-# FOOD MENU
-# =========================================================
+# ---------------- MENU ----------------
 
 MENU = {
     "Pizza": 80,
@@ -19,9 +16,7 @@ MENU = {
 }
 
 
-# =========================================================
-# DATABASE CONNECTION
-# =========================================================
+# ---------------- DATABASE CONNECTION ----------------
 
 def get_db():
 
@@ -32,9 +27,96 @@ def get_db():
     return conn
 
 
-# =========================================================
-# GET MENU ITEMS
-# =========================================================
+# ---------------- CREATE DATABASE ----------------
+
+def init_db():
+
+    conn = get_db()
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            customer_name TEXT DEFAULT 'Guest',
+            roll_number TEXT DEFAULT 'N/A',
+            consumer_id TEXT,
+            status TEXT NOT NULL,
+            total_price INTEGER NOT NULL
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS order_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER NOT NULL,
+            item TEXT NOT NULL,
+            quantity INTEGER NOT NULL,
+            price INTEGER NOT NULL,
+            FOREIGN KEY (order_id) REFERENCES orders(id)
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS menu_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item TEXT UNIQUE NOT NULL,
+            price INTEGER NOT NULL,
+            available INTEGER NOT NULL DEFAULT 1
+        )
+    """)
+
+    for item, price in MENU.items():
+
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO menu_items
+            (item, price, available)
+            VALUES (?, ?, 1)
+            """,
+            (item, price)
+        )
+
+    columns = conn.execute(
+        "PRAGMA table_info(orders)"
+    ).fetchall()
+
+    column_names = [
+        column["name"]
+        for column in columns
+    ]
+
+    if "customer_name" not in column_names:
+
+        conn.execute(
+            """
+            ALTER TABLE orders
+            ADD COLUMN customer_name TEXT DEFAULT 'Guest'
+            """
+        )
+
+    if "roll_number" not in column_names:
+
+        conn.execute(
+            """
+            ALTER TABLE orders
+            ADD COLUMN roll_number TEXT DEFAULT 'N/A'
+            """
+        )
+
+    if "consumer_id" not in column_names:
+
+        conn.execute(
+            """
+            ALTER TABLE orders
+            ADD COLUMN consumer_id TEXT
+            """
+        )
+
+    conn.commit()
+
+    conn.close()
+
+
+# ---------------- GET MENU ITEMS ----------------
 
 def get_menu_items():
 
@@ -53,129 +135,7 @@ def get_menu_items():
     return items
 
 
-# =========================================================
-# CREATE DATABASE
-# =========================================================
-
-def init_db():
-
-    conn = get_db()
-
-
-    # ---------------- ORDERS TABLE ----------------
-
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS orders (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            customer_name TEXT DEFAULT 'Guest',
-            roll_number TEXT DEFAULT 'N/A',
-            consumer_id TEXT,
-            status TEXT NOT NULL,
-            total_price INTEGER NOT NULL
-        )
-    """)
-
-
-    # ---------------- ORDER ITEMS TABLE ----------------
-
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS order_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            order_id INTEGER NOT NULL,
-            item TEXT NOT NULL,
-            quantity INTEGER NOT NULL,
-            price INTEGER NOT NULL,
-            FOREIGN KEY (order_id) REFERENCES orders(id)
-        )
-    """)
-
-
-    # ---------------- MENU ITEMS TABLE ----------------
-
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS menu_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            item TEXT UNIQUE NOT NULL,
-            price INTEGER NOT NULL,
-            available INTEGER NOT NULL DEFAULT 1
-        )
-    """)
-
-
-    # ---------------- ADD DEFAULT MENU ITEMS ----------------
-
-    for item, price in MENU.items():
-
-        conn.execute(
-            """
-            INSERT OR IGNORE INTO menu_items
-            (item, price, available)
-            VALUES (?, ?, 1)
-            """,
-            (item, price)
-        )
-
-
-    # =====================================================
-    # UPDATE OLD ORDERS TABLE
-    # =====================================================
-
-    columns = conn.execute(
-        "PRAGMA table_info(orders)"
-    ).fetchall()
-
-
-    column_names = [
-        column["name"]
-        for column in columns
-    ]
-
-
-    # ---------------- CUSTOMER NAME ----------------
-
-    if "customer_name" not in column_names:
-
-        conn.execute(
-            """
-            ALTER TABLE orders
-            ADD COLUMN customer_name TEXT DEFAULT 'Guest'
-            """
-        )
-
-
-    # ---------------- ROLL NUMBER ----------------
-
-    if "roll_number" not in column_names:
-
-        conn.execute(
-            """
-            ALTER TABLE orders
-            ADD COLUMN roll_number TEXT DEFAULT 'N/A'
-            """
-        )
-
-
-    # ---------------- CONSUMER ID ----------------
-
-    if "consumer_id" not in column_names:
-
-        conn.execute(
-            """
-            ALTER TABLE orders
-            ADD COLUMN consumer_id TEXT
-            """
-        )
-
-
-    # ---------------- SAVE CHANGES ----------------
-
-    conn.commit()
-
-    conn.close()
-
-# =========================================================
-# HOME PAGE
-# =========================================================
+# ---------------- HOME PAGE ----------------
 
 @app.route("/")
 def home():
@@ -185,88 +145,124 @@ def home():
     )
 
 
-# =========================================================
-# MENU PAGE
-# =========================================================
+# ---------------- ROBOTS.TXT ----------------
+
+@app.route("/robots.txt")
+def robots():
+
+    return send_from_directory(
+        ".",
+        "robots.txt"
+    )
+
+
+# ---------------- SITEMAP.XML ----------------
+
+@app.route("/sitemap.xml")
+def sitemap():
+
+    return send_from_directory(
+        ".",
+        "sitemap.xml"
+    )
+
+
+# ---------------- MENU PAGE ----------------
+
 @app.route("/menu")
 def menu():
 
-    cart = session.get("cart", {})
-
     menu_items = get_menu_items()
-
-    cart_count = sum(cart.values())
-
-    return render_template(
-        "menu.html",
-        menu_items=menu_items,
-        cart=cart,
-        cart_count=cart_count
-    )
-
-# =========================================================
-# ADD ITEM TO CART
-# =========================================================
-
-@app.route("/add-to-cart/<item>")
-def add_to_cart(item):
-
-    conn = get_db()
-
-    menu_item = conn.execute(
-        """
-        SELECT *
-        FROM menu_items
-        WHERE item = ?
-        """,
-        (item,)
-    ).fetchone()
-
-    conn.close()
-
-
-    # Item does not exist
-
-    if menu_item is None:
-
-        return "Item not found"
-
-
-    # Item is unavailable
-
-    if menu_item["available"] == 0:
-
-        return "This item is currently unavailable"
-
 
     cart = session.get(
         "cart",
         {}
     )
 
+    cart_count = sum(
+        cart.values()
+    )
 
-    # Increase quantity
+    return render_template(
+        "menu.html",
+        menu_items=menu_items,
+        cart_count=cart_count
+    )
 
-    if item in cart:
 
-        cart[item] += 1
+# ---------------- ADD TO CART ----------------
 
-    else:
+@app.route("/add-to-cart/<item>")
+def add_to_cart(item):
 
-        cart[item] = 1
+    if item not in MENU:
 
+        return "Item not found"
+
+    cart = session.get(
+        "cart",
+        {}
+    )
+
+    cart[item] = cart.get(
+        item,
+        0
+    ) + 1
 
     session["cart"] = cart
-
 
     return redirect(
         url_for("menu")
     )
 
 
-# =========================================================
-# CART PAGE
-# =========================================================
+# ---------------- DECREASE ITEM ----------------
+
+@app.route("/decrease/<item>")
+def decrease(item):
+
+    cart = session.get(
+        "cart",
+        {}
+    )
+
+    if item in cart:
+
+        cart[item] -= 1
+
+        if cart[item] <= 0:
+
+            del cart[item]
+
+    session["cart"] = cart
+
+    return redirect(
+        url_for("menu")
+    )
+
+
+# ---------------- REMOVE ITEM ----------------
+
+@app.route("/remove/<item>")
+def remove(item):
+
+    cart = session.get(
+        "cart",
+        {}
+    )
+
+    if item in cart:
+
+        del cart[item]
+
+    session["cart"] = cart
+
+    return redirect(
+        url_for("cart")
+    )
+
+
+# ---------------- CART PAGE ----------------
 
 @app.route("/cart")
 def cart():
@@ -280,13 +276,13 @@ def cart():
 
     total = 0
 
-
     for item, quantity in cart.items():
 
         price = MENU[item]
 
         item_total = price * quantity
 
+        total += item_total
 
         cart_items.append({
             "item": item,
@@ -295,10 +291,6 @@ def cart():
             "item_total": item_total
         })
 
-
-        total += item_total
-
-
     return render_template(
         "cart.html",
         cart_items=cart_items,
@@ -306,67 +298,12 @@ def cart():
     )
 
 
-# =========================================================
-# REMOVE ITEM FROM CART
-# =========================================================
+# ---------------- CUSTOMER DETAILS / PLACE ORDER ----------------
 
-@app.route("/remove-from-cart/<item>")
-def remove_from_cart(item):
-
-    cart = session.get(
-        "cart",
-        {}
-    )
-
-
-    if item in cart:
-
-        del cart[item]
-
-
-    session["cart"] = cart
-
-
-    return redirect(
-        url_for("cart")
-    )
-
-
-# =========================================================
-# DECREASE QUANTITY
-# =========================================================
-
-@app.route("/decrease/<item>")
-def decrease(item):
-
-    cart = session.get(
-        "cart",
-        {}
-    )
-
-
-    if item in cart:
-
-        cart[item] -= 1
-
-
-        if cart[item] <= 0:
-
-            del cart[item]
-
-
-    session["cart"] = cart
-
-
-    return redirect(
-        url_for("menu")
-    )
-
-
-# =========================================================
-# PLACE ORDER
-# =========================================================
-@app.route("/place-order", methods=["GET", "POST"])
+@app.route(
+    "/place-order",
+    methods=["GET", "POST"]
+)
 def place_order():
 
     cart = session.get(
@@ -374,33 +311,25 @@ def place_order():
         {}
     )
 
-    # Cart empty hai
     if not cart:
 
         return redirect(
             url_for("cart")
         )
 
-
-    # Customer details form submit hua
     if request.method == "POST":
 
-        customer_name = request.form["customer_name"]
+        customer_name = request.form[
+            "customer_name"
+        ]
 
         total = 0
-
-
-        # Calculate total
 
         for item, quantity in cart.items():
 
             total += MENU[item] * quantity
 
-
         conn = get_db()
-
-
-        # Create order first
 
         cursor = conn.execute(
             """
@@ -417,16 +346,12 @@ def place_order():
             )
         )
 
-
         order_id = cursor.lastrowid
 
-
-        # Generate Consumer ID
-
-        consumer_id = "CF" + str(1000 + order_id)
-
-
-        # Update Consumer ID
+        consumer_id = (
+            "CF" +
+            str(1000 + order_id)
+        )
 
         conn.execute(
             """
@@ -439,9 +364,6 @@ def place_order():
                 order_id
             )
         )
-
-
-        # Add order items
 
         for item, quantity in cart.items():
 
@@ -459,16 +381,11 @@ def place_order():
                 )
             )
 
-
         conn.commit()
 
         conn.close()
 
-
-        # Empty cart
-
         session["cart"] = {}
-
 
         return redirect(
             url_for(
@@ -477,22 +394,18 @@ def place_order():
             )
         )
 
-
-    # GET request → customer details page
-
     return render_template(
         "customer_details.html"
     )
-# =========================================================
-# ORDER CONFIRMATION
-# =========================================================
+
+
+# ---------------- ORDER CONFIRMATION ----------------
 
 @app.route("/order/<int:order_id>")
 def order_confirmation(order_id):
 
     conn = get_db()
 
-
     order = conn.execute(
         """
         SELECT *
@@ -501,7 +414,6 @@ def order_confirmation(order_id):
         """,
         (order_id,)
     ).fetchone()
-
 
     items = conn.execute(
         """
@@ -512,32 +424,43 @@ def order_confirmation(order_id):
         (order_id,)
     ).fetchall()
 
-
     conn.close()
-
 
     if order is None:
 
         return "Order not found"
 
+    if order["status"] == "Placed":
+
+        wait_time = 15
+
+    elif order["status"] == "Preparing":
+
+        wait_time = 10
+
+    else:
+
+        wait_time = 0
 
     return render_template(
         "order.html",
         order=order,
-        items=items
+        items=items,
+        order_id=order["id"],
+        customer_name=order["customer_name"],
+        consumer_id=order["consumer_id"],
+        total_price=order["total_price"],
+        wait_time=wait_time
     )
 
 
-# =========================================================
-# TRACK ORDER
-# =========================================================
+# ---------------- TRACK ORDER ----------------
 
 @app.route("/track/<int:order_id>")
 def track(order_id):
 
     conn = get_db()
 
-
     order = conn.execute(
         """
         SELECT *
@@ -546,7 +469,6 @@ def track(order_id):
         """,
         (order_id,)
     ).fetchone()
-
 
     items = conn.execute(
         """
@@ -557,35 +479,23 @@ def track(order_id):
         (order_id,)
     ).fetchall()
 
-
     conn.close()
-
 
     if order is None:
 
         return "Order not found"
 
+    if order["status"] == "Placed":
 
-    # Wait time according to status
+        wait_time = 15
 
-    wait_times = {
+    elif order["status"] == "Preparing":
 
-        "Placed": 15,
+        wait_time = 10
 
-        "Preparing": 10,
+    else:
 
-        "Ready": 0,
-
-        "Collected": 0
-
-    }
-
-
-    wait_time = wait_times.get(
-        order["status"],
-        15
-    )
-
+        wait_time = 0
 
     return render_template(
         "track.html",
@@ -593,9 +503,46 @@ def track(order_id):
         items=items,
         wait_time=wait_time
     )
-# =========================================================
-# ORDER HISTORY
-# =========================================================
+
+
+# ---------------- SEARCH ORDER ----------------
+
+@app.route(
+    "/search-order",
+    methods=["GET", "POST"]
+)
+def search_order():
+
+    if request.method == "POST":
+
+        order_id = request.form[
+            "order_id"
+        ]
+
+        try:
+
+            order_id = int(order_id)
+
+        except ValueError:
+
+            return render_template(
+                "search_order.html",
+                error="Please enter a valid Order ID"
+            )
+
+        return redirect(
+            url_for(
+                "track",
+                order_id=order_id
+            )
+        )
+
+    return render_template(
+        "search_order.html"
+    )
+
+
+# ---------------- ORDER HISTORY ----------------
 
 @app.route("/order-history")
 def order_history():
@@ -616,39 +563,9 @@ def order_history():
         "order_history.html",
         orders=orders
     )
-# =========================================================
-# SEARCH ORDER BY ID
-# =========================================================
 
-@app.route("/search-order", methods=["GET", "POST"])
-def search_order():
 
-    if request.method == "POST":
-
-        order_id = request.form["order_id"]
-
-        try:
-            order_id = int(order_id)
-
-        except ValueError:
-            return render_template(
-                "search_order.html",
-                error="Please enter a valid Order ID"
-            )
-
-        return redirect(
-            url_for(
-                "track",
-                order_id=order_id
-            )
-        )
-
-    return render_template(
-        "search_order.html"
-    )
-# =========================================================
-# STAFF LOGIN
-# =========================================================
+# ---------------- STAFF LOGIN ----------------
 
 @app.route(
     "/staff-login",
@@ -658,111 +575,64 @@ def staff_login():
 
     if request.method == "POST":
 
-        username = request.form["username"]
+        username = request.form[
+            "username"
+        ]
 
-        password = request.form["password"]
+        password = request.form[
+            "password"
+        ]
 
+        if (
+            username == "admin"
+            and password == "1234"
+        ):
 
-        # Demo login
-
-        if username == "admin" and password == "1234":
-
-            session["staff_logged_in"] = True
-
+            session[
+                "staff_logged_in"
+            ] = True
 
             return redirect(
                 url_for("staff")
             )
-
 
         return render_template(
             "staff_login.html",
             error="Invalid username or password"
         )
 
-
     return render_template(
         "staff_login.html"
     )
 
 
-# =========================================================
-# TOGGLE MENU AVAILABILITY
-# =========================================================
+# ---------------- STAFF LOGOUT ----------------
 
-@app.route("/toggle-availability/<item>")
-def toggle_availability(item):
+@app.route("/staff-logout")
+def staff_logout():
 
-    # Check staff login
+    session.pop(
+        "staff_logged_in",
+        None
+    )
 
-    if not session.get(
+    return redirect(
+        url_for("staff_login")
+    )
+
+
+# ---------------- STAFF DASHBOARD ----------------
+
+@app.route("/staff")
+def staff():
+
+    if session.get(
         "staff_logged_in"
-    ):
+    ) != True:
 
         return redirect(
             url_for("staff_login")
         )
-
-
-    conn = get_db()
-
-
-    menu_item = conn.execute(
-        """
-        SELECT *
-        FROM menu_items
-        WHERE item = ?
-        """,
-        (item,)
-    ).fetchone()
-
-
-    if menu_item is not None:
-
-        # Available → Not Available
-        # Not Available → Available
-
-        if menu_item["available"] == 1:
-
-            new_status = 0
-
-        else:
-
-            new_status = 1
-
-
-        conn.execute(
-            """
-            UPDATE menu_items
-            SET available = ?
-            WHERE item = ?
-            """,
-            (
-                new_status,
-                item
-            )
-        )
-
-
-        conn.commit()
-
-
-    conn.close()
-
-
-    return redirect(
-        url_for("staff")
-    )
-
-
-# =========================================================
-# STAFF DASHBOARD
-# =========================================================
-@app.route("/staff")
-def staff():
-
-    if session.get("staff_logged_in") != True:
-        return redirect(url_for("staff_login"))
 
     conn = get_db()
 
@@ -773,7 +643,6 @@ def staff():
         ORDER BY id DESC
         """
     ).fetchall()
-
 
     order_data = []
 
@@ -788,16 +657,10 @@ def staff():
             (order["id"],)
         ).fetchall()
 
-
         order_data.append({
             "order": order,
             "items": items
         })
-
-
-    # ================================
-    # ORDER STATISTICS
-    # ================================
 
     total_orders = conn.execute(
         """
@@ -805,7 +668,6 @@ def staff():
         FROM orders
         """
     ).fetchone()[0]
-
 
     placed_orders = conn.execute(
         """
@@ -815,7 +677,6 @@ def staff():
         """
     ).fetchone()[0]
 
-
     preparing_orders = conn.execute(
         """
         SELECT COUNT(*)
@@ -823,7 +684,6 @@ def staff():
         WHERE status = 'Preparing'
         """
     ).fetchone()[0]
-
 
     ready_orders = conn.execute(
         """
@@ -833,7 +693,6 @@ def staff():
         """
     ).fetchone()[0]
 
-
     collected_orders = conn.execute(
         """
         SELECT COUNT(*)
@@ -842,18 +701,14 @@ def staff():
         """
     ).fetchone()[0]
 
-
     conn.close()
 
-
     menu_items = get_menu_items()
-
 
     return render_template(
         "staff.html",
         orders=order_data,
         menu_items=menu_items,
-
         total_orders=total_orders,
         placed_orders=placed_orders,
         preparing_orders=preparing_orders,
@@ -861,14 +716,21 @@ def staff():
         collected_orders=collected_orders
     )
 
-# =========================================================
-# UPDATE ORDER STATUS
-# =========================================================
-@app.route("/update/<int:order_id>/<status>")
+
+# ---------------- UPDATE ORDER STATUS ----------------
+
+@app.route(
+    "/update/<int:order_id>/<status>"
+)
 def update_order(order_id, status):
 
-    if session.get("staff_logged_in") != True:
-        return redirect(url_for("staff_login"))
+    if session.get(
+        "staff_logged_in"
+    ) != True:
+
+        return redirect(
+            url_for("staff_login")
+        )
 
     allowed_statuses = [
         "Preparing",
@@ -877,6 +739,7 @@ def update_order(order_id, status):
     ]
 
     if status not in allowed_statuses:
+
         return "Invalid status"
 
     conn = get_db()
@@ -887,37 +750,85 @@ def update_order(order_id, status):
         SET status = ?
         WHERE id = ?
         """,
-        (status, order_id)
+        (
+            status,
+            order_id
+        )
     )
 
     conn.commit()
+
     conn.close()
 
-    return redirect(url_for("staff"))
-# =========================================================
-# STAFF LOGOUT
-# =========================================================
-
-@app.route("/staff-logout")
-def staff_logout():
-
-    session.pop(
-        "staff_logged_in",
-        None
+    return redirect(
+        url_for("staff")
     )
 
+
+# ---------------- MENU AVAILABILITY ----------------
+
+@app.route(
+    "/toggle-availability/<int:item_id>"
+)
+def toggle_availability(item_id):
+
+    if session.get(
+        "staff_logged_in"
+    ) != True:
+
+        return redirect(
+            url_for("staff_login")
+        )
+
+    conn = get_db()
+
+    item = conn.execute(
+        """
+        SELECT *
+        FROM menu_items
+        WHERE id = ?
+        """,
+        (item_id,)
+    ).fetchone()
+
+    if item is None:
+
+        conn.close()
+
+        return "Menu item not found"
+
+    new_status = 0 if item["available"] else 1
+
+    conn.execute(
+        """
+        UPDATE menu_items
+        SET available = ?
+        WHERE id = ?
+        """,
+        (
+            new_status,
+            item_id
+        )
+    )
+
+    conn.commit()
+
+    conn.close()
 
     return redirect(
-        url_for("home")
+        url_for("staff")
     )
 
 
-# =========================================================
-# START APPLICATION
-# =========================================================
+# ---------------- START APPLICATION ----------------
 
 if __name__ == "__main__":
 
     init_db()
 
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=True
+    )
+
