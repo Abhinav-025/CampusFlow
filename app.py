@@ -822,9 +822,11 @@ def toggle_availability(item_id):
 
 # ---------------- START APPLICATION ----------------
 
-if __name__ == "__main__":
+# Initialize database when the application starts
+init_db()
 
-    init_db()
+
+if __name__ == "__main__":
 
     app.run(
         host="0.0.0.0",
