@@ -1,8 +1,12 @@
+import os
 from flask import Flask, render_template, redirect, url_for, request, session, send_from_directory
 import sqlite3
 
 app = Flask(__name__)
-app.secret_key = "campusflow_secret_key"
+app.secret_key = os.environ.get(
+    "SECRET_KEY",
+    "development-secret-key"
+)
 
 
 # ---------------- MENU ----------------
@@ -584,9 +588,9 @@ def staff_login():
         ]
 
         if (
-            username == "admin"
-            and password == "1234"
-        ):
+    username == os.environ.get("STAFF_USERNAME")
+    and password == os.environ.get("STAFF_PASSWORD")
+):
 
             session[
                 "staff_logged_in"
